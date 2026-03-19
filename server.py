@@ -2,26 +2,31 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Store latest data from each ESP32
-device_data = {}
+# Store data from ESP32
+esp_data = {}
 
-# ESP32 sends data here
-@app.route('/update', methods=['POST'])
-def update():
-    data = request.get_json()
-    device_id = data.get("id", "unknown")  # ESP32 must send an ID
-    device_data[device_id] = data
-    return "OK", 200
-
-# Browser can view latest data here
-@app.route('/data/<device_id>')
-def get_device_data(device_id):
-    return jsonify(device_data.get(device_id, {}))
-
-# Simple test page
 @app.route('/')
-def index():
-    return "Server is running. Use /data/<device_id> to see sensor data."
+def home():
+    return "Server is running. Use /data/<device_id> to send or get sensor data."
 
-if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=5000)
+# Endpoint for ESP32 to send data
+@app.route('/data/<device_id>', methods=['POST'])
+def receive_data(device_id):
+    global esp_data
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "No data received"}), 400
+    
+    esp_data[device_id] = data
+    return jsonify({"status": "success"}), 200
+
+# Endpoint for webpage to fetch latest data
+@app.route('/data/<device_id>', methods=['GET'])
+def send_data(device_id):
+    if device_id in esp_data:
+        return jsonify(esp_data[device_id])
+    else:
+        return jsonify({"error": "No data for this device"}), 404
+
+if __name__ == '__main__':
+    app.run(debug=True)
