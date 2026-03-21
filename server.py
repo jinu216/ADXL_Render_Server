@@ -1,23 +1,19 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from datetime import datetime
 import os
 import pandas as pd
 
 app = Flask(__name__)
 
-# --- Thresholds ---
-HIT_THRESHOLD = 15.0
-SCRATCH_THRESHOLD = 7.0
-
-# --- File to store events ---
-EXCEL_FILE = "adxl_events.xlsx"
+# --- File to store all data ---
+EXCEL_FILE = "adxl_all_data.xlsx"
 
 # --- Latest sensor reading ---
 latest_data = {"status": "No Data", "time": "", "x": "error", "y": "error", "z": "error"}
 
 # Ensure Excel file exists
 if not os.path.exists(EXCEL_FILE):
-    df = pd.DataFrame(columns=["type", "time", "x", "y", "z"])
+    df = pd.DataFrame(columns=["time", "x", "y", "z", "status"])
     df.to_excel(EXCEL_FILE, index=False)
 
 # -------------------- Routes --------------------
@@ -27,8 +23,9 @@ def adxl_data():
     global latest_data
     data = request.json
     x, y, z = data.get("x"), data.get("y"), data.get("z")
+    status = data.get("status", "")
 
-    # Update latest_data for live display
+    # Update latest_data for /live
     latest_data = {
         "status": "ok",
         "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -37,30 +34,22 @@ def adxl_data():
         "z": z
     }
 
-    # Determine event type
-    event_type = None
-    if any(abs(val) > HIT_THRESHOLD for val in [x, y, z]):
-        event_type = "Hit"
-    elif any(abs(val) > SCRATCH_THRESHOLD for val in [x, y, z]):
-        event_type = "Scratch"
+    # Save all data to Excel
+    df_new = pd.DataFrame([{
+        "time": latest_data["time"],
+        "x": x,
+        "y": y,
+        "z": z,
+        "status": status
+    }])
 
-    # Save to Excel if Hit or Scratch
-    if event_type:
-        df_new = pd.DataFrame([{
-            "type": event_type,
-            "time": latest_data["time"],
-            "x": x,
-            "y": y,
-            "z": z
-        }])
-        if os.path.exists(EXCEL_FILE):
-            df_old = pd.read_excel(EXCEL_FILE)
-            df = pd.concat([df_new, df_old], ignore_index=True)
-        else:
-            df = df_new
-        # Keep only last 50 events
-        df = df.head(50)
-        df.to_excel(EXCEL_FILE, index=False)
+    if os.path.exists(EXCEL_FILE):
+        df_old = pd.read_excel(EXCEL_FILE)
+        df = pd.concat([df_old, df_new], ignore_index=True)
+    else:
+        df = df_new
+
+    df.to_excel(EXCEL_FILE, index=False)
 
     return jsonify({"status": "OK"})
 
@@ -70,21 +59,19 @@ def live():
     return jsonify(latest_data)
 
 
-@app.route("/events", methods=["GET"])
-def events():
+@app.route("/download", methods=["GET"])
+def download():
     if os.path.exists(EXCEL_FILE):
-        df = pd.read_excel(EXCEL_FILE)
-        return jsonify(df.to_dict(orient="records"))
+        return send_file(EXCEL_FILE, as_attachment=True)
     else:
-        return jsonify([])
+        return "No Excel file yet", 404
 
 
-@app.route("/reset_events", methods=["POST"])
-def reset_events():
-    # Delete Excel content
-    df = pd.DataFrame(columns=["type", "time", "x", "y", "z"])
+@app.route("/reset_excel", methods=["POST"])
+def reset_excel():
+    df = pd.DataFrame(columns=["time", "x", "y", "z", "status"])
     df.to_excel(EXCEL_FILE, index=False)
-    return jsonify({"status": "Reset Done"})
+    return jsonify({"status": "Excel reset done"})
 
 
 if __name__ == "__main__":
