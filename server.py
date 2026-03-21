@@ -1,65 +1,36 @@
 from flask import Flask, request, jsonify
 from datetime import datetime
+import os
 
 app = Flask(__name__)
 
-# ------------------------
-# Storage (in-memory for now)
-# ------------------------
-# For live sensor values
-live_data = {"x": "error", "y": "error", "z": "error", "status": "No Data", "time": ""}
+latest_data = {
+    "status": "No Data",
+    "time": "",
+    "x": "error",
+    "y": "error",
+    "z": "error"
+}
 
-# Event history (scratches, hits)
-events_history = []  # List of dicts: {"x":..., "y":..., "z":..., "status":..., "time":...}
+@app.route("/adxl_data", methods=["POST"])
+def adxl_data():
+    global latest_data
+    data = request.get_json(force=True)
 
-# ------------------------
-# Route: ESP32 sends data here
-# ------------------------
-@app.route('/adxl_data', methods=['POST'])
-def receive_adxl():
-    data = request.get_json()
-    if not data:
-        return jsonify({"status": "error", "message": "No JSON received"}), 400
+    latest_data = {
+        "status": data.get("status", "error"),
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "x": data.get("x", "error"),
+        "y": data.get("y", "error"),
+        "z": data.get("z", "error")
+    }
 
-    # Add timestamp
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    data["time"] = timestamp
+    return jsonify({"status": "OK"})
 
-    # Save live data
-    live_data.update(data)
+@app.route("/live", methods=["GET"])
+def live():
+    return jsonify(latest_data)
 
-    # Add to event history if status is hit/error
-    if data.get("status") != "ok":
-        events_history.append(data)
-
-    print("📥 Received from ESP32:", data)
-    return jsonify({"status": "OK"}), 200
-
-# ------------------------
-# Route: Return live sensor data
-# ------------------------
-@app.route('/live', methods=['GET'])
-def get_live():
-    return jsonify(live_data)
-
-# ------------------------
-# Route: Return event history
-# ------------------------
-@app.route('/events', methods=['GET'])
-def get_events():
-    return jsonify(events_history)
-
-# ------------------------
-# Health check route
-# ------------------------
-@app.route('/', methods=['GET'])
-def home():
-    return "SafePark Server is running!"
-
-# ------------------------
-# Run server (Render requires dynamic PORT)
-# ------------------------
 if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 5000))  # 👈 IMPORTANT for Render
     app.run(host="0.0.0.0", port=port)
